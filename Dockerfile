@@ -8,6 +8,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install PM2 and copilot-proxy-api globally
 RUN npm install -g pm2 copilot-proxy-api
 
+# Apply auto/fallback model resilience patch to copilot-proxy-api so requests for 'auto'
+# or unmapped models are smoothly translated to the active working model instead of failing with HTTP 400.
+RUN node -e '\
+const fs = require("fs"); \
+const path = require("path"); \
+const { execSync } = require("child_process"); \
+const globalDir = execSync("npm root -g", { encoding: "utf8" }).trim(); \
+const p = path.join(globalDir, "copilot-proxy-api", "dist", "main.mjs"); \
+let code = fs.readFileSync(p, "utf8"); \
+code = code.replace("n=qt(e),", "n=qt(e);if(n.model===\"auto\"||n.model===\"opus 4.6\"||n.model===\"anthropic/claude-opus-4.6\"||!n.model){n.model=process.env.COPILOT_FALLBACK_MODEL||\"gpt-4o\"};"); \
+fs.writeFileSync(p, code); \
+console.log("[Dockerfile] Patched copilot-proxy-api for auto model fallback."); \
+'
+
 WORKDIR /app
 
 # Install Hermes Agent from the official NousResearch repository
