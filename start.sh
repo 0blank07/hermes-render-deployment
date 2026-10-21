@@ -89,9 +89,25 @@ pm2 start /usr/local/bin/hermes \
   --restart-delay 5000 \
   -- dashboard --host 0.0.0.0 --port "${DASHBOARD_PORT}" --no-open
 
+# 8. Wait for dashboard to be ready on $DASHBOARD_PORT so Render immediately detects it as primary
+echo "[start.sh] Waiting for hermes-dashboard to be ready on port ${DASHBOARD_PORT}..."
+MAX_WAIT_DASHBOARD=30
+ELAPSED_DASHBOARD=0
+until curl -sf "http://127.0.0.1:${DASHBOARD_PORT}/" > /dev/null 2>&1; do
+  if [ "$ELAPSED_DASHBOARD" -ge "$MAX_WAIT_DASHBOARD" ]; then
+    echo "[start.sh] WARNING: hermes-dashboard took longer than ${MAX_WAIT_DASHBOARD}s to start."
+    break
+  fi
+  sleep 1
+  ELAPSED_DASHBOARD=$((ELAPSED_DASHBOARD + 1))
+done
+if [ "$ELAPSED_DASHBOARD" -lt "$MAX_WAIT_DASHBOARD" ]; then
+  echo "[start.sh] hermes-dashboard is ready on port ${DASHBOARD_PORT} (waited ${ELAPSED_DASHBOARD}s)."
+fi
+
 # Save updated process list (now includes hermes-discord and hermes-dashboard).
 pm2 save
 
-# 8. Keep the container alive and stream logs.
+# 9. Keep the container alive and stream logs.
 echo "[start.sh] All processes registered with PM2. Streaming logs..."
 pm2 logs --raw
