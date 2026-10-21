@@ -65,6 +65,12 @@ export OPENAI_MODEL_NAME="gpt-4o"
 export DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN:-}"
 export DISCORD_ALLOWED_USERS="${DISCORD_ALLOWED_USERS:-}"
 
+# Configure Web Dashboard authentication credentials.
+# Binding to 0.0.0.0 requires basic authentication. You can optionally customize
+# HERMES_DASHBOARD_BASIC_AUTH_PASSWORD in Render's environment variables.
+export HERMES_DASHBOARD_BASIC_AUTH_USERNAME="${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}"
+export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD="${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:-hermes123}"
+
 # 6. Launch Hermes Discord Gateway via PM2 with a restart backoff.
 # 'hermes' must be on PATH (symlinked to /usr/local/bin/hermes in Dockerfile).
 pm2 start /usr/local/bin/hermes \
@@ -73,9 +79,19 @@ pm2 start /usr/local/bin/hermes \
   --restart-delay 5000 \
   -- gateway run
 
-# Save updated process list (now includes hermes-discord).
+# 7. Launch Hermes Web Dashboard via PM2
+# Render automatically routes external HTTPS traffic to the port in $PORT (default 10000).
+DASHBOARD_PORT="${PORT:-10000}"
+echo "[start.sh] Launching Hermes Web Dashboard on port ${DASHBOARD_PORT}..."
+pm2 start /usr/local/bin/hermes \
+  --name "hermes-dashboard" \
+  --interpreter bash \
+  --restart-delay 5000 \
+  -- dashboard --host 0.0.0.0 --port "${DASHBOARD_PORT}" --no-open
+
+# Save updated process list (now includes hermes-discord and hermes-dashboard).
 pm2 save
 
-# 7. Keep the container alive and stream logs.
-echo "[start.sh] Both processes registered with PM2. Streaming logs..."
+# 8. Keep the container alive and stream logs.
+echo "[start.sh] All processes registered with PM2. Streaming logs..."
 pm2 logs --raw
