@@ -54,10 +54,52 @@ until curl -sf http://127.0.0.1:9876/ > /dev/null 2>&1; do
 done
 echo "[start.sh] copilot-proxy is ready (waited ${ELAPSED}s)."
 
-# 5. Configure environment variables for Hermes
+# 5. Configure environment variables and model settings for Hermes
+# For GitHub Copilot Student plan, specific models (like gpt-4o or claude-opus) are restricted.
+# Copilot Student plan uses "auto", which allows GitHub to automatically route to the best available model.
+HERMES_MODEL="${HERMES_MODEL:-auto}"
 export OPENAI_BASE_URL="http://127.0.0.1:9876/v1"
 export OPENAI_API_KEY="dummy-key"
-export OPENAI_MODEL_NAME="gpt-4o"
+export CUSTOM_API_KEY="dummy-key"
+export OPENAI_MODEL_NAME="${HERMES_MODEL}"
+
+# Hermes stores model configuration in /root/.hermes/config.yaml.
+# We configure it to use "custom" provider pointing to the local copilot-proxy with "auto".
+mkdir -p /root/.hermes
+python3 -c "
+import re, os
+config_path = '/root/.hermes/config.yaml'
+model = os.environ.get('HERMES_MODEL', 'auto')
+
+if os.path.exists(config_path):
+    with open(config_path, 'r') as f:
+        content = f.read()
+    
+    # Update default model, provider, and base_url in config.yaml
+    content = re.sub(r'default:\s*\"[^\"]*\"', f'default: \"{model}\"', content)
+    content = re.sub(r'provider:\s*\"[^\"]*\"', 'provider: \"custom\"', content)
+    content = re.sub(r'base_url:\s*\"[^\"]*\"', 'base_url: \"http://127.0.0.1:9876/v1\"', content)
+    
+    with open(config_path, 'w') as f:
+        f.write(content)
+else:
+    with open(config_path, 'w') as f:
+        f.write(f'''
+model:
+  default: \"{model}\"
+  provider: \"custom\"
+  base_url: \"http://127.0.0.1:9876/v1\"
+''')
+"
+
+# Also configure /root/.hermes/.env
+cat << 'EOF' >> /root/.hermes/.env
+OPENAI_BASE_URL=http://127.0.0.1:9876/v1
+OPENAI_API_KEY=dummy-key
+CUSTOM_API_KEY=dummy-key
+EOF
+
+echo "[start.sh] Configured Hermes to use model '${HERMES_MODEL}' via proxy at http://127.0.0.1:9876/v1."
 
 # DISCORD_BOT_TOKEN and DISCORD_ALLOWED_USERS are already present in the
 # environment from Render's secret env vars; no need to re-export them.
