@@ -182,11 +182,16 @@ else:
 """)
 
 # 4. Configure /root/.hermes/.env
+discord_token = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+allowed_users = os.environ.get("DISCORD_ALLOWED_USERS", "").strip() or "*"
+
 with open(env_path, "w", encoding="utf-8") as f:
-    f.write("""OPENAI_BASE_URL=http://127.0.0.1:9876/v1
+    f.write(f"""OPENAI_BASE_URL=http://127.0.0.1:9876/v1
 OPENAI_API_KEY=dummy-key
 CUSTOM_API_KEY=dummy-key
 COPILOT_PROXY_API_KEY=dummy-key
+DISCORD_BOT_TOKEN={discord_token}
+DISCORD_ALLOWED_USERS={allowed_users}
 """)
 
 print(f"[start.sh] Successfully configured Hermes config.yaml and .env with model: {working_model}")
@@ -211,9 +216,9 @@ pm2 restart copilot-proxy --update-env
 # Clear any previous broken session state so Hermes starts completely fresh
 rm -rf /root/.hermes/sessions/* /root/.hermes/state.db* 2>/dev/null || true
 
-# DISCORD_BOT_TOKEN and DISCORD_ALLOWED_USERS are already present in the environment
+# Export Discord bot configuration (default to allowing all users if unset)
 export DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN:-}"
-export DISCORD_ALLOWED_USERS="${DISCORD_ALLOWED_USERS:-}"
+export DISCORD_ALLOWED_USERS="${DISCORD_ALLOWED_USERS:-*}"
 
 # Configure Web Dashboard authentication credentials.
 export HERMES_DASHBOARD_BASIC_AUTH_USERNAME="${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}"
