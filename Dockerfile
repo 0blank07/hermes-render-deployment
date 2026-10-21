@@ -17,7 +17,7 @@ const { execSync } = require("child_process"); \
 const globalDir = execSync("npm root -g", { encoding: "utf8" }).trim(); \
 const p = path.join(globalDir, "copilot-proxy-api", "dist", "main.mjs"); \
 let code = fs.readFileSync(p, "utf8"); \
-code = code.replace("n=qt(e),", "n=qt(e);if(n.model===\"auto\"||n.model===\"opus 4.6\"||n.model===\"anthropic/claude-opus-4.6\"||!n.model){n.model=process.env.COPILOT_FALLBACK_MODEL||\"gpt-4o\"};"); \
+code = code.replace("s=JSON.stringify(n);", "s=JSON.stringify((n.model===\"auto\"||!n.model||n.model===\"opus 4.6\"||n.model===\"anthropic/claude-opus-4.6\")?{...n,model:process.env.COPILOT_FALLBACK_MODEL||\"gpt-4o\"}:n);"); \
 fs.writeFileSync(p, code); \
 console.log("[Dockerfile] Patched copilot-proxy-api for auto model fallback."); \
 '

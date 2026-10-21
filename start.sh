@@ -137,6 +137,14 @@ providers:
     base_url: "http://127.0.0.1:9876/v1"
     api_key: "dummy-key"
     api_mode: "chat_completions"
+
+auxiliary:
+  compression:
+    provider: "copilot-proxy"
+  vision:
+    provider: "copilot-proxy"
+  title:
+    provider: "copilot-proxy"
 """
 
 if os.path.exists(config_path):
@@ -155,8 +163,9 @@ if os.path.exists(config_path):
     else:
         content = re.sub(r"(\nmodel:.*?\n\s+provider:\s*[^\n]+)", r"\g<1>\n  base_url: \"http://127.0.0.1:9876/v1\"", content, count=1, flags=re.DOTALL)
 
-    # Remove any existing providers block and append the canonical one
+    # Remove any existing providers or auxiliary blocks and append the canonical ones
     content = re.sub(r"\nproviders:.*?(?=\n[a-zA-Z_]|\Z)", "", content, flags=re.DOTALL)
+    content = re.sub(r"\nauxiliary:.*?(?=\n[a-zA-Z_]|\Z)", "", content, flags=re.DOTALL)
     content = content.strip() + "\n" + providers_block.strip() + "\n"
 
     with open(config_path, "w", encoding="utf-8") as f:
