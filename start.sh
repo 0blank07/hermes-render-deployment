@@ -67,8 +67,9 @@ export DISCORD_ALLOWED_USERS="${DISCORD_ALLOWED_USERS:-}"
 
 # 6. Launch Hermes Discord Gateway via PM2 with a restart backoff.
 # 'hermes' must be on PATH (symlinked to /usr/local/bin/hermes in Dockerfile).
-pm2 start hermes \
+pm2 start /usr/local/bin/hermes \
   --name "hermes-discord" \
+  --interpreter bash \
   --restart-delay 5000 \
   -- gateway run
 
