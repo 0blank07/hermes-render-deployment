@@ -71,7 +71,7 @@ try:
     req = urllib.request.Request("http://127.0.0.1:9876/v1/models")
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read().decode())
-        model_ids = [m["id"] for m in data.get("data", [])]
+        model_ids = [m["id"].strip("\"'\''") for m in data.get("data", []) if "id" in m]
         print(f"[start.sh] Copilot proxy reports {len(model_ids)} available models:")
         for mid in model_ids:
             print(f"  - {mid}")
@@ -79,7 +79,7 @@ except Exception as e:
     print(f"[start.sh] Could not list models: {e}")
 
 # 2. Test candidate models to find which one works on this Copilot account
-user_model = os.environ.get("HERMES_MODEL", "").strip()
+user_model = os.environ.get("HERMES_MODEL", "").strip().strip("\"'\''")
 priority = [
     "gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-3-5-sonnet-20241022",
     "gpt-4", "gpt-4-turbo", "o1-mini", "o3-mini", "gpt-3.5-turbo"
@@ -118,7 +118,9 @@ for candidate in candidates[:25]:
     except Exception as e:
         print(f"[start.sh] Model \"{candidate}\" test error: {e}")
 
-if not working_model:
+if working_model:
+    working_model = working_model.strip("\"'\''")
+else:
     working_model = "gpt-4o"
     print(f"[start.sh] WARNING: No tested model succeeded. Defaulting to: {working_model}")
 
@@ -126,42 +128,42 @@ if not working_model:
 with open("/tmp/working_model.txt", "w") as f:
     f.write(working_model)
 
-# 3. Configure /root/.hermes/config.yaml
+# 3. Configure /root/.hermes/config.yaml with clean unquoted YAML scalars
 providers_block = f"""
 providers:
   copilot-proxy:
-    base_url: "http://127.0.0.1:9876/v1"
-    api_key: "dummy-key"
-    api_mode: "chat_completions"
+    base_url: http://127.0.0.1:9876/v1
+    api_key: dummy-key
+    api_mode: chat_completions
   custom:
-    base_url: "http://127.0.0.1:9876/v1"
-    api_key: "dummy-key"
-    api_mode: "chat_completions"
+    base_url: http://127.0.0.1:9876/v1
+    api_key: dummy-key
+    api_mode: chat_completions
 
 auxiliary:
   compression:
-    provider: "copilot-proxy"
+    provider: copilot-proxy
   vision:
-    provider: "copilot-proxy"
+    provider: copilot-proxy
   title:
-    provider: "copilot-proxy"
+    provider: copilot-proxy
 """
 
 if os.path.exists(config_path):
     with open(config_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Update model.default
-    if re.search(r"\nmodel:.*?\n\s+default:\s*[^\n]+", content, re.DOTALL):
-        content = re.sub(r"(\nmodel:.*?\n\s+default:\s*)[^\n]+", rf"\g<1>\"{working_model}\"", content, count=1, flags=re.DOTALL)
-    # Update model.provider
-    if re.search(r"\nmodel:.*?\n\s+provider:\s*[^\n]+", content, re.DOTALL):
-        content = re.sub(r"(\nmodel:.*?\n\s+provider:\s*)[^\n]+", r"\g<1>\"copilot-proxy\"", content, count=1, flags=re.DOTALL)
+    # Update model.default  (clean scalar, no quotes)
+    if re.search(r"(\nmodel:.*?\n\s+default:\s*)[^\n]+", content, re.DOTALL):
+        content = re.sub(r"(\nmodel:.*?\n\s+default:\s*)[^\n]+", rf"\g<1>{working_model}", content, count=1, flags=re.DOTALL)
+    # Update model.provider (clean scalar, no quotes)
+    if re.search(r"(\nmodel:.*?\n\s+provider:\s*)[^\n]+", content, re.DOTALL):
+        content = re.sub(r"(\nmodel:.*?\n\s+provider:\s*)[^\n]+", r"\g<1>copilot-proxy", content, count=1, flags=re.DOTALL)
     # Update model.base_url
     if "base_url:" in content:
-        content = re.sub(r"(\nmodel:.*?\n\s+base_url:\s*)[^\n]+", r"\g<1>\"http://127.0.0.1:9876/v1\"", content, count=1, flags=re.DOTALL)
+        content = re.sub(r"(\nmodel:.*?\n\s+base_url:\s*)[^\n]+", r"\g<1>http://127.0.0.1:9876/v1", content, count=1, flags=re.DOTALL)
     else:
-        content = re.sub(r"(\nmodel:.*?\n\s+provider:\s*[^\n]+)", r"\g<1>\n  base_url: \"http://127.0.0.1:9876/v1\"", content, count=1, flags=re.DOTALL)
+        content = re.sub(r"(\nmodel:.*?\n\s+provider:\s*[^\n]+)", r"\g<1>\n  base_url: http://127.0.0.1:9876/v1", content, count=1, flags=re.DOTALL)
 
     # Remove any existing providers or auxiliary blocks and append the canonical ones
     content = re.sub(r"\nproviders:.*?(?=\n[a-zA-Z_]|\Z)", "", content, flags=re.DOTALL)
@@ -173,9 +175,9 @@ if os.path.exists(config_path):
 else:
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(f"""model:
-  default: \"{working_model}\"
-  provider: \"copilot-proxy\"
-  base_url: \"http://127.0.0.1:9876/v1\"
+  default: {working_model}
+  provider: copilot-proxy
+  base_url: http://127.0.0.1:9876/v1
 {providers_block.strip()}
 """)
 
@@ -187,12 +189,12 @@ CUSTOM_API_KEY=dummy-key
 COPILOT_PROXY_API_KEY=dummy-key
 """)
 
-print(f"[start.sh] Successfully configured Hermes config.yaml and .env with model: \"{working_model}\"")
+print(f"[start.sh] Successfully configured Hermes config.yaml and .env with model: {working_model}")
 '
 
 # Read detected working model and update environment
 if [ -f /tmp/working_model.txt ]; then
-  WORKING_MODEL=$(cat /tmp/working_model.txt)
+  WORKING_MODEL=$(cat /tmp/working_model.txt | tr -d '\"'\''')
 else
   WORKING_MODEL="gpt-4o"
 fi
