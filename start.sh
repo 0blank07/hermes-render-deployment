@@ -32,7 +32,7 @@ fi
 pm2 start copilot-proxy-api \
   --name "copilot-proxy" \
   --restart-delay 5000 \
-  -- server --port 9876
+  -- start --port 9876
 
 # Save the process list so PM2 can recover it after an unexpected restart.
 pm2 save
