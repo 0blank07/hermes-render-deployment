@@ -1,1 +1,10 @@
+# Local environment and token files
+.env
+github_token
+*.log
+
+# Node and Python dependencies/caches
+node_modules/
+__pycache__/
+*.pyc
 .idea
