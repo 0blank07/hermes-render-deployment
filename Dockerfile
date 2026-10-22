@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install PM2 and copilot-proxy-api globally
 RUN npm install -g pm2 copilot-proxy-api
 
-# Apply auto/fallback model resilience patch to copilot-proxy-api so requests for 'auto',
-# unmapped models, or quoted models are smoothly translated to the active working model instead of failing with HTTP 400.
+# Apply auto/fallback model resilience patch and localhost binding patch to copilot-proxy-api.
+# Binding strictly to 127.0.0.1 prevents Render from mistaking port 9876 for the public web dashboard.
 RUN node -e '\
 const fs = require("fs"); \
 const path = require("path"); \
@@ -18,8 +18,9 @@ const globalDir = execSync("npm root -g", { encoding: "utf8" }).trim(); \
 const p = path.join(globalDir, "copilot-proxy-api", "dist", "main.mjs"); \
 let code = fs.readFileSync(p, "utf8"); \
 code = code.replace("s=JSON.stringify(n);", "s=JSON.stringify((()=>{let m=typeof n.model===\"string\"?n.model.replace(/[\\x27\\x22\\x5C]/g,\"\"):n.model;if(!m||m===\"auto\"||m===\"opus 4.6\"||m.includes(\"opus-4.6\")){m=process.env.COPILOT_FALLBACK_MODEL||\"gpt-4o\"}return {...n,model:m}})());"); \
+code = code.replace("port:e.port", "port:e.port,hostname:\"127.0.0.1\""); \
 fs.writeFileSync(p, code); \
-console.log("[Dockerfile] Patched copilot-proxy-api for auto model fallback."); \
+console.log("[Dockerfile] Patched copilot-proxy-api for auto model fallback and 127.0.0.1 localhost binding."); \
 '
 
 WORKDIR /app

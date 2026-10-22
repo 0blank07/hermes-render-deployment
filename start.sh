@@ -71,7 +71,7 @@ try:
     req = urllib.request.Request("http://127.0.0.1:9876/v1/models")
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read().decode())
-        model_ids = [m["id"].strip("\"'\''") for m in data.get("data", []) if "id" in m]
+        model_ids = [m["id"].replace("\"", "").replace("\x27", "") for m in data.get("data", []) if "id" in m]
         print(f"[start.sh] Copilot proxy reports {len(model_ids)} available models:")
         for mid in model_ids:
             print(f"  - {mid}")
@@ -79,7 +79,7 @@ except Exception as e:
     print(f"[start.sh] Could not list models: {e}")
 
 # 2. Test candidate models in hierarchy order (Flagship -> Advanced -> Balanced -> Lightweight)
-user_model = os.environ.get("HERMES_MODEL", "").strip().strip("\"'\''")
+user_model = os.environ.get("HERMES_MODEL", "").strip().replace("\"", "").replace("\x27", "")
 priority = [
     # Tier 1: Flagship / Best (GPT-4o & top variants)
     "gpt-4o",
@@ -133,7 +133,7 @@ def get_tier(name):
 tested_summary = []
 verified_models = []
 print(f"[start.sh] Probing candidate models for HTTP 200 OK (Best -> Balanced)...")
-for candidate in candidates[:25]:
+for candidate in candidates[:20]:
     tier = get_tier(candidate)
     try:
         payload = json.dumps({
@@ -146,7 +146,7 @@ for candidate in candidates[:25]:
             data=payload,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=4) as resp:
             if resp.status == 200:
                 verified_models.append(candidate)
                 tested_summary.append({"model": candidate, "status": "200 OK", "tier": tier, "ok": True})
@@ -159,8 +159,8 @@ for candidate in candidates[:25]:
         print(f"[start.sh]   [ERROR]   {candidate}: {e}")
 
 if verified_models:
-    primary_model = verified_models[0].strip("\"'\''")
-    fallback_models = [m.strip("\"'\''") for m in verified_models[1:]]
+    primary_model = verified_models[0].replace("\"", "").replace("\x27", "")
+    fallback_models = [m.replace("\"", "").replace("\x27", "") for m in verified_models[1:]]
 else:
     primary_model = "gpt-4o"
     fallback_models = ["gpt-4o-mini"]
@@ -178,6 +178,7 @@ report_lines = [
 for item in tested_summary:
     m = item["model"]
     tier = item["tier"]
+    st = item["status"]
     if item["ok"]:
         status_str = "[OK 200]"
         if m == primary_model:
@@ -186,7 +187,7 @@ for item in tested_summary:
             fb_num = fallback_models.index(m) + 1 if m in fallback_models else "?"
             role = f"[FALLBACK #{fb_num}]"
     else:
-        status_str = f"[{item['status']}]"
+        status_str = f"[{st}]"
         role = "Blocked / Unsupported"
     
     report_lines.append(f"  {status_str:<13} {m:<28} {tier:<18} {role}")
@@ -216,12 +217,13 @@ md_report = f"""# Verified Working Models Report
 for item in tested_summary:
     m = item["model"]
     tier = item["tier"]
+    st = item["status"]
     if item["ok"]:
         role = "**Active Primary**" if m == primary_model else f"Fallback #{fallback_models.index(m)+1}"
         status_icon = "PASS (200 OK)"
     else:
         role = "Unsupported on account"
-        status_icon = f"FAIL ({item['status']})"
+        status_icon = f"FAIL ({st})"
     md_report += f"| {status_icon} | `{m}` | {tier} | {role} |\n"
 
 for p in ["/app/MODELS.md", "/root/.hermes/MODELS.md"]:
