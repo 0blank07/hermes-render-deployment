@@ -81,33 +81,30 @@ except Exception as e:
 # 2. Test candidate models in hierarchy order (Flagship -> Advanced -> Balanced -> Lightweight)
 user_model = os.environ.get("HERMES_MODEL", "").strip().replace("\"", "").replace("\x27", "")
 priority = [
-    # Tier 1: Flagship / Best (GPT-4o & top variants)
+    # 1. Primary Flagship
     "gpt-4o",
+    # 2. Immediate Separate-Quota Fallback (High-speed, high rate limit)
+    "gpt-4o-mini",
+    # 3. Alternative Advanced Flagships
+    "gpt-4.1",
+    "gpt-4.1-2025-04-14",
+    # 4. Alternative High-Quota Fallbacks
+    "gpt-3.5-turbo",
+    "gpt-4o-mini-2024-07-18",
+    "gpt-3.5-turbo-0613",
+    # 5. Additional Flagship Date Snapshots
     "gpt-4o-2024-11-20",
     "gpt-4o-2024-08-06",
     "gpt-4o-2024-05-13",
     "gpt-4-o-preview",
-    "claude-3.5-sonnet",
-    "claude-3-5-sonnet-20241022",
-    "claude-sonnet-5",
-    "claude-sonnet-5.5",
-    "gpt-4.1",
-    "gpt-4.1-2025-04-14",
-    "gpt-4",
-    "gpt-4-0613",
-    "gpt-4-0125-preview",
-    # Tier 2: Deep Reasoning
+    # 6. Deep Reasoning (STEM)
     "o3-mini",
     "o1-mini",
-    # Tier 3: Balanced & High Rate Limits (Fast fallbacks)
-    "gpt-4o-mini",
-    "gpt-4o-mini-2024-07-18",
+    # 7. Other provider families
+    "claude-3.5-sonnet",
+    "claude-sonnet-5",
     "claude-haiku-4.5",
-    "claude-haiku-5.5",
-    "gemini-3.8-flash",
-    "mai-code-1.1-flash",
-    "gpt-3.5-turbo",
-    "gpt-3.5-turbo-0613"
+    "gemini-3.8-flash"
 ]
 
 candidates = []
