@@ -78,12 +78,38 @@ try:
 except Exception as e:
     print(f"[start.sh] Could not list models: {e}")
 
-# 2. Test candidate models to find which one works on this Copilot account
+# 2. Test candidate models in hierarchy order (Flagship -> Advanced -> Balanced -> Lightweight)
 user_model = os.environ.get("HERMES_MODEL", "").strip().strip("\"'\''")
 priority = [
-    "gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-3-5-sonnet-20241022",
-    "gpt-4", "gpt-4-turbo", "o1-mini", "o3-mini", "gpt-3.5-turbo"
+    # Tier 1: Flagship / Best (GPT-4o & top variants)
+    "gpt-4o",
+    "gpt-4o-2024-11-20",
+    "gpt-4o-2024-08-06",
+    "gpt-4o-2024-05-13",
+    "gpt-4-o-preview",
+    "claude-3.5-sonnet",
+    "claude-3-5-sonnet-20241022",
+    "claude-sonnet-5",
+    "claude-sonnet-5.5",
+    "gpt-4.1",
+    "gpt-4.1-2025-04-14",
+    "gpt-4",
+    "gpt-4-0613",
+    "gpt-4-0125-preview",
+    # Tier 2: Deep Reasoning
+    "o3-mini",
+    "o1-mini",
+    # Tier 3: Balanced & High Rate Limits (Fast fallbacks)
+    "gpt-4o-mini",
+    "gpt-4o-mini-2024-07-18",
+    "claude-haiku-4.5",
+    "claude-haiku-5.5",
+    "gemini-3.8-flash",
+    "mai-code-1.1-flash",
+    "gpt-3.5-turbo",
+    "gpt-3.5-turbo-0613"
 ]
+
 candidates = []
 if user_model and user_model != "auto":
     candidates.append(user_model)
@@ -94,42 +120,66 @@ for mid in model_ids:
     if mid not in candidates:
         candidates.append(mid)
 
-working_model = None
+verified_models = []
+print(f"[start.sh] Probing candidate models for HTTP 200 OK (Best -> Balanced)...")
 for candidate in candidates[:25]:
     try:
         payload = json.dumps({
             "model": candidate,
             "messages": [{"role": "user", "content": "hi"}],
-            "max_tokens": 5
+            "max_tokens": 1
         }).encode("utf-8")
         req = urllib.request.Request(
             "http://127.0.0.1:9876/v1/chat/completions",
             data=payload,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=8) as resp:
             if resp.status == 200:
-                working_model = candidate
-                print(f"[start.sh] >>> Verified working model on your Copilot account: {candidate} <<<")
-                break
+                verified_models.append(candidate)
+                print(f"[start.sh]   [✓] 200 OK: \"{candidate}\"")
     except urllib.error.HTTPError as err:
         body = err.read().decode("utf-8", errors="ignore")
-        print(f"[start.sh] Model \"{candidate}\" rejected (HTTP {err.code}): {body[:150]}")
+        print(f"[start.sh]   [✗] HTTP {err.code}: \"{candidate}\"")
     except Exception as e:
-        print(f"[start.sh] Model \"{candidate}\" test error: {e}")
+        print(f"[start.sh]   [✗] Error: \"{candidate}\" ({e})")
 
-if working_model:
-    working_model = working_model.strip("\"'\''")
+if verified_models:
+    primary_model = verified_models[0].strip("\"'\''")
+    fallback_models = [m.strip("\"'\''") for m in verified_models[1:]]
 else:
-    working_model = "gpt-4o"
-    print(f"[start.sh] WARNING: No tested model succeeded. Defaulting to: {working_model}")
+    primary_model = "gpt-4o"
+    fallback_models = ["gpt-4o-mini"]
+    print("[start.sh] WARNING: No tested model succeeded. Defaulting to: gpt-4o with gpt-4o-mini fallback")
 
-# Record working model for the shell
+print("\n[start.sh] ===================================================")
+print(f"[start.sh] Primary Model (Best): {primary_model}")
+if fallback_models:
+    print(f"[start.sh] Dynamic Fallback Chain ({len(fallback_models)} verified backups):")
+    for idx, bm in enumerate(fallback_models, 1):
+        print(f"[start.sh]   {idx}. {bm}")
+else:
+    print("[start.sh] No additional backup models detected.")
+print("[start.sh] ===================================================\n")
+
+# Record primary model for the shell
 with open("/tmp/working_model.txt", "w") as f:
-    f.write(working_model)
+    f.write(primary_model)
 
-# 3. Configure /root/.hermes/config.yaml with clean unquoted YAML scalars
+# 3. Configure /root/.hermes/config.yaml with dynamic fallback chain
+fallback_lines = []
+if fallback_models:
+    fallback_lines.append("fallback_providers:")
+    for m in fallback_models:
+        fallback_lines.append(f"  - provider: copilot-proxy\n    model: {m}")
+fallback_block = "\n".join(fallback_lines)
+
 providers_block = f"""
+agent:
+  api_max_retries: 1
+
+{fallback_block}
+
 providers:
   copilot-proxy:
     base_url: http://127.0.0.1:9876/v1
@@ -155,7 +205,7 @@ if os.path.exists(config_path):
 
     # Update model.default  (clean scalar, no quotes)
     if re.search(r"(\nmodel:.*?\n\s+default:\s*)[^\n]+", content, re.DOTALL):
-        content = re.sub(r"(\nmodel:.*?\n\s+default:\s*)[^\n]+", rf"\g<1>{working_model}", content, count=1, flags=re.DOTALL)
+        content = re.sub(r"(\nmodel:.*?\n\s+default:\s*)[^\n]+", rf"\g<1>{primary_model}", content, count=1, flags=re.DOTALL)
     # Update model.provider (clean scalar, no quotes)
     if re.search(r"(\nmodel:.*?\n\s+provider:\s*)[^\n]+", content, re.DOTALL):
         content = re.sub(r"(\nmodel:.*?\n\s+provider:\s*)[^\n]+", r"\g<1>copilot-proxy", content, count=1, flags=re.DOTALL)
@@ -165,7 +215,9 @@ if os.path.exists(config_path):
     else:
         content = re.sub(r"(\nmodel:.*?\n\s+provider:\s*[^\n]+)", r"\g<1>\n  base_url: http://127.0.0.1:9876/v1", content, count=1, flags=re.DOTALL)
 
-    # Remove any existing providers or auxiliary blocks and append the canonical ones
+    # Remove any existing agent, fallback_providers, providers, or auxiliary blocks and append canonical ones
+    content = re.sub(r"\nagent:.*?(?=\n[a-zA-Z_]|\Z)", "", content, flags=re.DOTALL)
+    content = re.sub(r"\nfallback_providers:.*?(?=\n[a-zA-Z_]|\Z)", "", content, flags=re.DOTALL)
     content = re.sub(r"\nproviders:.*?(?=\n[a-zA-Z_]|\Z)", "", content, flags=re.DOTALL)
     content = re.sub(r"\nauxiliary:.*?(?=\n[a-zA-Z_]|\Z)", "", content, flags=re.DOTALL)
     content = content.strip() + "\n" + providers_block.strip() + "\n"
@@ -175,7 +227,7 @@ if os.path.exists(config_path):
 else:
     with open(config_path, "w", encoding="utf-8") as f:
         f.write(f"""model:
-  default: {working_model}
+  default: {primary_model}
   provider: copilot-proxy
   base_url: http://127.0.0.1:9876/v1
 {providers_block.strip()}
