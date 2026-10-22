@@ -120,9 +120,21 @@ for mid in model_ids:
     if mid not in candidates:
         candidates.append(mid)
 
+def get_tier(name):
+    name_l = name.lower()
+    if any(k in name_l for k in ["mini", "haiku", "flash", "turbo"]):
+        return "Balanced (Fast)"
+    if any(k in name_l for k in ["o1", "o3"]):
+        return "Reasoning (STEM)"
+    if any(k in name_l for k in ["opus", "gpt-4o", "sonnet", "gpt-4.1", "gpt-4"]):
+        return "Flagship (Best)"
+    return "Standard"
+
+tested_summary = []
 verified_models = []
 print(f"[start.sh] Probing candidate models for HTTP 200 OK (Best -> Balanced)...")
 for candidate in candidates[:25]:
+    tier = get_tier(candidate)
     try:
         payload = json.dumps({
             "model": candidate,
@@ -137,12 +149,14 @@ for candidate in candidates[:25]:
         with urllib.request.urlopen(req, timeout=8) as resp:
             if resp.status == 200:
                 verified_models.append(candidate)
-                print(f"[start.sh]   [✓] 200 OK: \"{candidate}\"")
+                tested_summary.append({"model": candidate, "status": "200 OK", "tier": tier, "ok": True})
+                print(f"[start.sh]   [OK 200]  {candidate} ({tier})")
     except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="ignore")
-        print(f"[start.sh]   [✗] HTTP {err.code}: \"{candidate}\"")
+        tested_summary.append({"model": candidate, "status": f"HTTP {err.code}", "tier": tier, "ok": False})
+        print(f"[start.sh]   [FAIL {err.code}] {candidate} ({tier})")
     except Exception as e:
-        print(f"[start.sh]   [✗] Error: \"{candidate}\" ({e})")
+        tested_summary.append({"model": candidate, "status": "Error", "tier": tier, "ok": False})
+        print(f"[start.sh]   [ERROR]   {candidate}: {e}")
 
 if verified_models:
     primary_model = verified_models[0].strip("\"'\''")
@@ -152,15 +166,70 @@ else:
     fallback_models = ["gpt-4o-mini"]
     print("[start.sh] WARNING: No tested model succeeded. Defaulting to: gpt-4o with gpt-4o-mini fallback")
 
-print("\n[start.sh] ===================================================")
-print(f"[start.sh] Primary Model (Best): {primary_model}")
-if fallback_models:
-    print(f"[start.sh] Dynamic Fallback Chain ({len(fallback_models)} verified backups):")
-    for idx, bm in enumerate(fallback_models, 1):
-        print(f"[start.sh]   {idx}. {bm}")
-else:
-    print("[start.sh] No additional backup models detected.")
-print("[start.sh] ===================================================\n")
+# Build a prominent ASCII report table in deployment logs
+report_lines = [
+    "\n================================================================================",
+    "                    GITHUB COPILOT VERIFIED MODELS REPORT",
+    "================================================================================",
+    "  STATUS        MODEL ID                     TIER               ROLE",
+    "--------------------------------------------------------------------------------"
+]
+
+for item in tested_summary:
+    m = item["model"]
+    tier = item["tier"]
+    if item["ok"]:
+        status_str = "[OK 200]"
+        if m == primary_model:
+            role = "[ACTIVE PRIMARY]"
+        else:
+            fb_num = fallback_models.index(m) + 1 if m in fallback_models else "?"
+            role = f"[FALLBACK #{fb_num}]"
+    else:
+        status_str = f"[{item['status']}]"
+        role = "Blocked / Unsupported"
+    
+    report_lines.append(f"  {status_str:<13} {m:<28} {tier:<18} {role}")
+
+fallback_chain_str = " -> ".join([primary_model] + fallback_models)
+report_lines.extend([
+    "--------------------------------------------------------------------------------",
+    f"Summary: {len(verified_models)} models verified with 200 OK on this Copilot account.",
+    f"Active Primary: {primary_model}",
+    f"Automatic Fallback Chain: {fallback_chain_str}",
+    "================================================================================\n"
+])
+
+full_report = "\n".join(report_lines)
+print(full_report)
+
+# Save markdown report to /app/MODELS.md and /root/.hermes/MODELS.md so Hermes can read it anytime
+md_report = f"""# Verified Working Models Report
+
+**Active Primary Model:** `{primary_model}`  
+**Automatic Fallback Chain:** `{fallback_chain_str}`  
+
+## Model Status Table
+| Status | Model ID | Tier | Assigned Role |
+| :--- | :--- | :--- | :--- |
+"""
+for item in tested_summary:
+    m = item["model"]
+    tier = item["tier"]
+    if item["ok"]:
+        role = "**Active Primary**" if m == primary_model else f"Fallback #{fallback_models.index(m)+1}"
+        status_icon = "PASS (200 OK)"
+    else:
+        role = "Unsupported on account"
+        status_icon = f"FAIL ({item['status']})"
+    md_report += f"| {status_icon} | `{m}` | {tier} | {role} |\n"
+
+for p in ["/app/MODELS.md", "/root/.hermes/MODELS.md"]:
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(md_report)
+    except Exception:
+        pass
 
 # Record primary model for the shell
 with open("/tmp/working_model.txt", "w") as f:
@@ -246,7 +315,7 @@ DISCORD_BOT_TOKEN={discord_token}
 DISCORD_ALLOWED_USERS={allowed_users}
 """)
 
-print(f"[start.sh] Successfully configured Hermes config.yaml and .env with model: {working_model}")
+print(f"[start.sh] Successfully configured Hermes config.yaml and .env with model: {primary_model}")
 '
 
 # Read detected working model and update environment
